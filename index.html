@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pelota que rebota</title>
+<style>
+  :root {
+    --fondo: #dfe9f2;
+    --suelo: #b9cbdb;
+    --tinta: #1f2a44;
+    --panel: #ffffff;
+    --borde: #c3d2e0;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fondo: #141c2b;
+      --suelo: #22304a;
+      --tinta: #e6edf5;
+      --panel: #1c2638;
+      --borde: #34445f;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--fondo);
+    color: var(--tinta);
+    font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  canvas {
+    flex: 1;
+    width: 100%;
+    display: block;
+  }
+  .controles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: var(--panel);
+    border-top: 1px solid var(--borde);
+  }
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 999px;
+    border: 2px solid var(--tinta);
+    background: transparent;
+    color: var(--tinta);
+    cursor: pointer;
+  }
+  button:hover { background: var(--tinta); color: var(--panel); }
+  button:focus-visible, input:focus-visible { outline: 3px solid #4a8fd9; outline-offset: 2px; }
+  .muestra {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: -2px;
+    background: var(--color-pelota, #ff5a5f);
+  }
+  label { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  input[type="range"] { width: 160px; accent-color: var(--tinta); }
+  output { min-width: 3ch; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+  <canvas id="lienzo"></canvas>
+
+  <div class="controles">
+    <button id="pausa" type="button">Pausar</button>
+    <button id="color" type="button"><span class="muestra"></span>Cambiar color</button>
+    <label for="velocidad">
+      Velocidad
+      <input id="velocidad" type="range" min="1" max="10" value="5">
+      <output id="valorVel">5</output>
+    </label>
+  </div>
+
+<script>
+  const lienzo = document.getElementById('lienzo');
+  const ctx = lienzo.getContext('2d');
+  const btnPausa = document.getElementById('pausa');
+  const btnColor = document.getElementById('color');
+  const deslizador = document.getElementById('velocidad');
+  const valorVel = document.getElementById('valorVel');
+
+  const colores = ['#ff5a5f', '#ffb400', '#00a699', '#3d7be0', '#9b5de5', '#f15bb5'];
+  let indiceColor = 0;
+
+  const pelota = { x: 100, y: 100, r: 30, dx: 1, dy: 1, aplastado: 0 };
+  let velocidad = 5;
+  let pausado = false;
+  let ancho = 0, alto = 0;
+
+  function ajustarTamano() {
+    const dpr = window.devicePixelRatio || 1;
+    ancho = lienzo.clientWidth;
+    alto = lienzo.clientHeight;
+    lienzo.width = ancho * dpr;
+    lienzo.height = alto * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    pelota.r = Math.max(18, Math.min(ancho, alto) * 0.06);
+    pelota.x = Math.min(Math.max(pelota.x, pelota.r), ancho - pelota.r);
+    pelota.y = Math.min(Math.max(pelota.y, pelota.r), alto - pelota.r);
+  }
+
+  function dibujar() {
+    ctx.clearRect(0, 0, ancho, alto);
+
+    // Sombra en el suelo
+    const distanciaSuelo = (alto - pelota.y) / alto;
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--suelo');
+    ctx.beginPath();
+    ctx.ellipse(pelota.x, alto - 6, pelota.r * (1 - distanciaSuelo * 0.5), 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pelota (se aplasta un poco al chocar)
+    const s = pelota.aplastado;
+    ctx.save();
+    ctx.translate(pelota.x, pelota.y);
+    ctx.scale(1 + s * 0.2, 1 - s * 0.2);
+    const grad = ctx.createRadialGradient(-pelota.r * 0.35, -pelota.r * 0.35, pelota.r * 0.1, 0, 0, pelota.r);
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(0.25, colores[indiceColor]);
+    grad.addColorStop(1, colores[indiceColor]);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, pelota.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function actualizar() {
+    pelota.x += pelota.dx * velocidad;
+    pelota.y += pelota.dy * velocidad;
+
+    if (pelota.x + pelota.r >= ancho) { pelota.x = ancho - pelota.r; pelota.dx = -1; pelota.aplastado = 1; }
+    if (pelota.x - pelota.r <= 0)     { pelota.x = pelota.r;         pelota.dx =  1; pelota.aplastado = 1; }
+    if (pelota.y + pelota.r >= alto)  { pelota.y = alto - pelota.r;  pelota.dy = -1; pelota.aplastado = 1; }
+    if (pelota.y - pelota.r <= 0)     { pelota.y = pelota.r;         pelota.dy =  1; pelota.aplastado = 1; }
+
+    pelota.aplastado *= 0.8;
+  }
+
+  function bucle() {
+    if (!pausado) actualizar();
+    dibujar();
+    requestAnimationFrame(bucle);
+  }
+
+  function alternarPausa() {
+    pausado = !pausado;
+    btnPausa.textContent = pausado ? 'Reanudar' : 'Pausar';
+  }
+
+  btnPausa.addEventListener('click', alternarPausa);
+
+  btnColor.addEventListener('click', () => {
+    indiceColor = (indiceColor + 1) % colores.length;
+    document.documentElement.style.setProperty('--color-pelota', colores[indiceColor]);
+  });
+
+  deslizador.addEventListener('input', () => {
+    velocidad = Number(deslizador.value);
+    valorVel.textContent = velocidad;
+  });
+
+  // Barra espaciadora para pausar
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && e.target.tagName !== 'BUTTON') {
+      e.preventDefault();
+      alternarPausa();
+    }
+  });
+
+  window.addEventListener('resize', ajustarTamano);
+
+  // Respetar la preferencia de movimiento reducido
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    velocidad = 2;
+    deslizador.value = 2;
+    valorVel.textContent = 2;
+  }
+
+  ajustarTamano();
+  bucle();
+</script>
+</body>
+</html>
